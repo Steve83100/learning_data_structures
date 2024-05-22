@@ -1,10 +1,11 @@
 #include <iostream>
 #include <list>
-#define maxWeight 10000
 #define maxNode 256
 #define maxEdge 2048
+#define maxWeight 10000 // 邻接矩阵需要用默认值填充空边
 using std::cout; using std::endl;
 
+// 辅助计算最小生成树的数据结构，大部分时候用不到
 struct Edge{
     int ver1;
     int ver2;
@@ -16,6 +17,16 @@ struct Edge{
 // 抽象数据结构“图”的声明
 class Graph{
     public:
+    bool isDirect;
+    bool* visited;
+    Graph(int numNode, bool isD): isDirect(isD){
+        // 复习知识点：构造函数被调用时，this只能是类本身，所以不需要定义为虚函数
+        visited = new bool[numNode];
+    }
+    virtual ~Graph() = default;
+    // 复习知识点：为了析构彻底，析构函数应为虚函数，否则当父类指针指向子类对象时，只能析构掉父类的部分
+    // 这里如果写 delete[] visited 会报错 unknown signal，暂时无法解决
+        
     virtual int firstAdj(int v) const = 0;
     virtual int nextAdj(int v, int preAdj) const = 0;
     virtual void setEdge(int from, int to, int weight) = 0;
@@ -34,13 +45,11 @@ class GraphMatrix : public Graph{
     int** Mat;
     int numVer;
     int numEdge;
-    bool isDirect;
-    bool* visited;
     int* inDegree;
 
     public:
-    GraphMatrix(bool isDirectional = false, int numNode = maxNode);
-    ~GraphMatrix();
+    GraphMatrix(int numNode = maxNode, bool isDirectional = false);
+    virtual ~GraphMatrix();
     virtual int firstAdj(int v) const;
     virtual int nextAdj(int v, int preAdj) const;
     virtual void setEdge(int from, int to, int weight);
@@ -51,8 +60,8 @@ class GraphMatrix : public Graph{
     virtual Edge* getEdges() const;
 };
 
-GraphMatrix::GraphMatrix(bool isDirectional, int numNode):
-numVer(numNode), numEdge(0){
+GraphMatrix::GraphMatrix(int numNode, bool isDirectional):
+numVer(numNode), numEdge(0), Graph(numNode, isDirectional){ // 调用父类的构造函数，初始化isDirect，visited
     Mat = new int*[maxNode];
     visited = new bool[maxNode];
     inDegree = new int[maxNode];
@@ -79,7 +88,7 @@ GraphMatrix::~GraphMatrix(){
 int GraphMatrix::firstAdj(int v) const {
     // 遍历邻接矩阵，找到与v相连的、编号最小的节点
     for(int i = 0; i < numVer; i++){
-        if(Mat[v][numVer] != maxWeight){
+        if(Mat[v][i] != maxWeight){
             return i;
         }
     }
@@ -102,7 +111,7 @@ void GraphMatrix::setEdge(int from, int to, int weight){
         numEdge++;
     }
     Mat[from][to] = weight; // 若已经有这条边，那么只需修改权值
-    if(!isDirect){ // 无向图需要对称添加
+    if(!isDirect){ // 无向图需要对称添加，但不需要增加边数
         Mat[to][from] = weight;
     }
 }
@@ -119,7 +128,17 @@ void GraphMatrix::delEdge(int from, int to){
 
 Edge* GraphMatrix::getEdges() const{
     // 为计算最小生成树而开发的接口，返回图中所有的边
-
+    Edge* edges = new Edge[maxEdge];
+    int n = 0; // 跟踪当前已被添加的边数量
+    for(int i = 0; i < numVer; i++){
+        for(int j = i + 1; j < numVer; j++){ // 这样能保证ver1 < ver2
+            if(Mat[i][j] != maxWeight){
+                edges[n] = {i, j, Mat[i][j]};
+                n++;
+            }
+        }
+    }
+    return edges;
 }
 
 
@@ -130,19 +149,20 @@ class GraphLink : public Graph{
     struct edgeNode{
         int ver;
         int weight;
-        edgeNode* next;
+        edgeNode(): ver(-1), weight(maxWeight){}
+        edgeNode(int v, int w): ver(v), weight(w){}
     };
     std::list<edgeNode>* ArrLink; // 一个存储了n个链表的数组，每个链表都存储了该节点的所有临边
     int numVer;
     int numEdge;
-    bool* visited;
     
     public:
-    GraphLink(int numNodes = maxNode):numVer(numNodes), numEdge(0){
+    GraphLink(int numNode = maxNode, bool isDirectional = false):
+    numVer(numNode), numEdge(0), Graph(numNode, isDirectional){
         visited = new bool[maxNode];
         ArrLink = new std::list<edgeNode>[maxNode];
     }
-    ~GraphLink(){
+    virtual ~GraphLink(){
         delete[] visited;
         delete[] ArrLink;
     }
@@ -163,18 +183,56 @@ int GraphLink::firstAdj(int ver) const{
 
 int GraphLink::nextAdj(int ver, int prevAdj) const{
     std::list<edgeNode>::iterator p = ArrLink[ver].begin();
+    bool found = false;
     while(p != ArrLink[ver].end()){
-        if(p->ver == prevAdj) return p->next->ver;
+        if(found) return p->ver;
+        if(p->ver == prevAdj) found = true;
+        p++;
     }
     return -1;
 }
 
 void GraphLink::setEdge(int from, int to, int weight){
-
+    // 不会保证所有相邻节点按序号从小到大排列，也没必要，直接在表尾添加新边
+    std::list<edgeNode>::iterator p = ArrLink[from].begin();
+    while(p != ArrLink[from].end()){
+        if(p->ver == to){ // 已经有这条边，只需修改weight
+            p->weight = weight;
+            return;
+        }
+        p++;
+    }
+    edgeNode* newNode = new edgeNode(to, weight);
+    ArrLink[from].push_back(*newNode); // 已经遍历到末尾了，还没有找到，于是新建边
+    numEdge++;
+    if(!isDirect){ // 无向图，需要添加另一方向的边，但不用再增加numEdge
+        std::list<edgeNode>::iterator p2 = ArrLink[to].begin();
+        while(p2 != ArrLink[to].end()){
+            if(p2->ver == from){
+                p2->weight = weight;
+                return;
+            }
+            p2++;
+        }
+        edgeNode* newNode2 = new edgeNode(from, weight);
+        ArrLink[to].push_back(*newNode2);
+    }
 }
 
 void GraphLink::delEdge(int from, int to){
-
+    std::list<edgeNode>::iterator p = ArrLink[from].begin();
+    while(p != ArrLink[from].end()){
+        if(p->ver == to){ // 找到需要删除的边
+            ArrLink[from].erase(p);
+            numEdge--;
+        }
+    }
+    if(!isDirect){ // 无向图，需要删除另一方向的边，但不用再减少numEdge
+        std::list<edgeNode>::iterator p2 = ArrLink[to].begin();
+        while(p2 != ArrLink[to].end()){
+            if(p2->ver == from) ArrLink[to].erase(p2);
+        }
+    }
 }
 
 int GraphLink::getWeight(int from, int to) const{
@@ -187,8 +245,28 @@ int GraphLink::getWeight(int from, int to) const{
 }
 
 Edge* GraphLink::getEdges() const{
-    // 为计算最小生成树而开发的接口
-    
+    // 为计算最小生成树而开发的接口，返回图中所有的边
+    // 这里提供的解决方案很可能不是最优的，时间复杂度为O(n^3)
+    Edge* edges = new Edge[maxEdge];
+    int n = 0; // 跟踪当前已被添加的边数量
+    for(int i = 0; i < numVer; i++){
+        std::list<edgeNode>::iterator p = ArrLink[i].begin();
+        while(p != ArrLink[i].end()){
+            bool dupFlag = false;
+            for(int j = 0; j < n; j++){ // 进行检查，如果这条边已经被添加进edges了，就不要再添加一遍了
+                if(edges[j].ver1 == p->ver && edges[j].ver2 == i){ // 这样能保证ver1 < ver2
+                    dupFlag = true;
+                    break;
+                }
+            }
+            if(!dupFlag){ // 还未添加
+                edges[n] = {i, p->ver, p->weight};
+                n++;
+            }
+            p++;
+        }
+    }
+    return edges;
 }
 
 
@@ -197,7 +275,8 @@ Edge* GraphLink::getEdges() const{
 
 // 下面实现最小生成树算法：读取一个树，输出其最小生成树的权值之和
 int MST(const Graph& graph){
-    // 只能获取无向图的最小生成树
+    if(graph.isDirect) return -1; // 只能获取无向图的最小生成树
+
     int n = graph.getNumVer(), m = graph.getNumEdge();
     int sumWeight = 0, numEdge = 0;
 
@@ -217,7 +296,7 @@ int MST(const Graph& graph){
     }
 
     // 为了防止环路形成，建立一个跟踪已形成子图的数组——存储每一个节点所属子图中，下标最小的节点索引
-    int subGraphHead[1000];
+    int subGraphHead[maxNode];
     // 一开始，每一个节点都属于仅包含自己的子图，则其初始值为该节点本身
     for(int i = 0; i < n; i++) subGraphHead[i] = i;
     // 每当添加一条边，就根据较小节点所属子图，修改较大节点所属的子图
@@ -241,14 +320,15 @@ int MST(const Graph& graph){
 }
 
 int main(){
-    // GraphMatrix m(false, 4);
-    GraphLink m(4);
+    // GraphMatrix m(4, false);
+    GraphLink m(4, false);
     m.setEdge(0,1,24);
     m.setEdge(2,3,3);
     m.setEdge(0,3,100);
     m.setEdge(1,2,50);
-    m.setEdge(3,1,2);
+    m.setEdge(1,2,25); // 此处是修改边，而非新建
+    cout<<m.getWeight(1,2)<<endl;
     cout<<m.firstAdj(0)<<endl;
-    cout<<m.nextAdj(1,2)<<endl;
+    cout<<m.nextAdj(0,1)<<endl;
     cout<<MST(m);
 }
