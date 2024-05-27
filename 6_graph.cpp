@@ -1,5 +1,6 @@
 #include <iostream>
 #include <list>
+#include <queue>
 #define maxNode 256
 #define maxEdge 2048
 #define maxWeight 10000 // 邻接矩阵需要用默认值填充空边
@@ -19,9 +20,14 @@ class Graph{
     public:
     bool isDirect;
     bool* visited;
+    int* inDegree;
     Graph(int numNode, bool isD): isDirect(isD){
         // 复习知识点：构造函数被调用时，this只能是类本身，所以不需要定义为虚函数
         visited = new bool[numNode];
+        inDegree = new int[maxNode];
+        for(int i = 0; i < maxNode; i++){
+            inDegree[i] = 0;
+        }
     }
     virtual ~Graph() = default;
     // 复习知识点：为了析构彻底，析构函数应为虚函数，否则当父类指针指向子类对象时，只能析构掉父类的部分
@@ -45,7 +51,6 @@ class GraphMatrix : public Graph{
     int** Mat;
     int numVer;
     int numEdge;
-    int* inDegree;
 
     public:
     GraphMatrix(int numNode = maxNode, bool isDirectional = false);
@@ -64,10 +69,8 @@ GraphMatrix::GraphMatrix(int numNode, bool isDirectional):
 numVer(numNode), numEdge(0), Graph(numNode, isDirectional){ // 调用父类的构造函数，初始化isDirect，visited
     Mat = new int*[maxNode];
     visited = new bool[maxNode];
-    inDegree = new int[maxNode];
     for(int i = 0; i < maxNode; i++){
         Mat[i] = new int[maxNode];
-        inDegree[i] = 0;
     }
     for(int i = 0; i < numNode; i++){
         for(int j = 0; j < numNode; j++){
@@ -98,7 +101,7 @@ int GraphMatrix::firstAdj(int v) const {
 int GraphMatrix::nextAdj(int v, int preAdj) const {
     // 找到与v相连的节点中，preAdj的下一个节点
     for(int i = preAdj + 1; i < numVer; i++){
-        if(Mat[v][numVer] != maxWeight){
+        if(Mat[v][i] != maxWeight){
             return i;
         }
     }
@@ -205,7 +208,8 @@ void GraphLink::setEdge(int from, int to, int weight){
     edgeNode* newNode = new edgeNode(to, weight);
     ArrLink[from].push_back(*newNode); // 已经遍历到末尾了，还没有找到，于是新建边
     numEdge++;
-    if(!isDirect){ // 无向图，需要添加另一方向的边，但不用再增加numEdge
+    inDegree[to]++;
+    if(!isDirect){ // 无向图，需要添加另一方向的边，需要增加另一方向的入度，但不用再增加numEdge
         std::list<edgeNode>::iterator p2 = ArrLink[to].begin();
         while(p2 != ArrLink[to].end()){
             if(p2->ver == from){
@@ -216,6 +220,7 @@ void GraphLink::setEdge(int from, int to, int weight){
         }
         edgeNode* newNode2 = new edgeNode(from, weight);
         ArrLink[to].push_back(*newNode2);
+        inDegree[from]++;
     }
 }
 
@@ -225,12 +230,16 @@ void GraphLink::delEdge(int from, int to){
         if(p->ver == to){ // 找到需要删除的边
             ArrLink[from].erase(p);
             numEdge--;
+            inDegree[to]--;
         }
     }
     if(!isDirect){ // 无向图，需要删除另一方向的边，但不用再减少numEdge
         std::list<edgeNode>::iterator p2 = ArrLink[to].begin();
         while(p2 != ArrLink[to].end()){
-            if(p2->ver == from) ArrLink[to].erase(p2);
+            if(p2->ver == from){
+                ArrLink[to].erase(p2);
+                inDegree[from]--;
+            }
         }
     }
 }
@@ -271,10 +280,77 @@ Edge* GraphLink::getEdges() const{
 
 
 
-// 下面实现图的两种遍历算法
+void __dfs(const Graph& graph, int node){
+    // 真正在递归的函数
+    cout<<node<<' ';
+    graph.visited[node] = true;
+    for(int v = graph.firstAdj(node); v != -1; v = graph.nextAdj(node, v)){
+        if(!graph.visited[v]) __dfs(graph, v);
+    }
+}
 
-// 下面实现最小生成树算法：读取一个树，输出其最小生成树的权值之和
+void dfs(const Graph& graph, int firstNode = 0){
+    // 图的深度优先遍历
+    for(int i = 0; i < graph.getNumVer(); i++){
+        graph.visited[i] = false;
+    }
+    __dfs(graph, firstNode);
+}
+
+void bfs(const Graph& graph, int firstNode = 0){
+    // 
+    for(int i = 0; i < graph.getNumVer(); i++){
+        graph.visited[i] = false;
+    }
+    std::queue<int> q;
+    q.push(firstNode);
+    graph.visited[firstNode] = true;
+    while(!q.empty()){
+        int node = q.front();
+        q.pop();
+        cout<<node<<' ';
+        for(int v = graph.firstAdj(node); v != -1; v = graph.nextAdj(node, v)){
+            if(!graph.visited[v]){
+                q.push(v);
+                graph.visited[v] = true; // 进队列后立即设为“已访问”，防止反复添加
+            }
+        }
+    }
+}
+
+
+
+void topoSort(const Graph& graph){
+    // 生成拓扑排序序列，仅支持有向图
+    int dyInDegree[maxNode];
+    for(int i = 0; i < graph.getNumVer(); i++){
+        dyInDegree[i] = graph.inDegree[i]; // 初始化动态变化的入度数组
+    }
+    std::queue<int> q;
+    for(int i = 0; i < graph.getNumVer(); i++){
+        if(dyInDegree[i] == 0) q.push(i);
+    }
+    while(!q.empty()){
+        int node = q.front();
+        q.pop();
+        cout<<node<<' ';
+        for(int i = graph.firstAdj(node); i != -1; i = graph.nextAdj(node, i)){
+            dyInDegree[i]--;
+            if(dyInDegree[i] == 0) q.push(i);
+        }
+    }
+    for(int i = 0; i < graph.getNumVer(); i++){
+        if(dyInDegree[i] > 0){
+            cout<<"There are nodes left!";
+            break;
+        }
+    }    
+}
+
+
+
 int MST(const Graph& graph){
+    // Kruskal算法求最小生成树：读取一个树，输出其最小生成树的权值之和
     if(graph.isDirect) return -1; // 只能获取无向图的最小生成树
 
     int n = graph.getNumVer(), m = graph.getNumEdge();
@@ -321,14 +397,18 @@ int MST(const Graph& graph){
 
 int main(){
     // GraphMatrix m(4, false);
-    GraphLink m(4, false);
+    GraphLink m(4, true);
     m.setEdge(0,1,24);
     m.setEdge(2,3,3);
     m.setEdge(0,3,100);
     m.setEdge(1,2,50);
     m.setEdge(1,2,25); // 此处是修改边，而非新建
-    cout<<m.getWeight(1,2)<<endl;
-    cout<<m.firstAdj(0)<<endl;
-    cout<<m.nextAdj(0,1)<<endl;
-    cout<<MST(m);
+    // cout<<m.getWeight(1,2)<<endl;
+    // cout<<m.firstAdj(0)<<endl;
+    // cout<<m.nextAdj(0,1)<<endl;
+    // dfs(m);
+    // cout<<endl;
+    // bfs(m);
+    topoSort(m);
+    // cout<<MST(m);
 }
