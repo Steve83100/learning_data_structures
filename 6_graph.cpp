@@ -4,6 +4,7 @@
 #define maxNode 256
 #define maxEdge 2048
 #define maxWeight 10000 // 邻接矩阵需要用默认值填充空边
+#define maxRoute 100000 // 图中最长路径的默认值，在dijkstra算法中使用
 using std::cout; using std::endl;
 
 // 辅助计算最小生成树的数据结构，大部分时候用不到
@@ -349,6 +350,40 @@ void topoSort(const Graph& graph){
 
 
 
+int dijkstra(const Graph& graph, int start, int end){
+    // 寻找两点间最短路径，返回最短路径长度
+    int dist[maxNode]; // 用dist数组记录：到该节点的路径长度
+    for(int i = 0; i < graph.getNumVer(); i++){
+        graph.visited[i] = false; // 用visited数组记录：已确定最短路径的节点
+        dist[i] = maxRoute;
+    }
+    dist[start] = 0;
+
+    while(true){
+        // 寻找未确定最短路径的节点中，路径最短的
+        int currNode = -1;
+        int minDist = maxRoute;
+        for(int i = 0; i < graph.getNumVer(); i++){
+            if(!graph.visited[i] && dist[i] < minDist){
+                currNode = i;
+                minDist = dist[i];
+            }
+        }
+        if(currNode == end) return minDist; // 确定了目标节点的最短路径
+        if(currNode == -1) break; // 所有节点都已确定最短路径
+
+        graph.visited[currNode] = true; // currNode节点确定了最短路径
+        for(int adjNode = graph.firstAdj(currNode); adjNode != -1; adjNode = graph.nextAdj(currNode, adjNode)){ // 将其邻接点路径更新
+            if(dist[currNode] + graph.getWeight(currNode, adjNode) < dist[adjNode]){ // 如果有一条更近的路，就更新最短路径
+                dist[adjNode] = dist[currNode] + graph.getWeight(currNode, adjNode);
+            }
+        }
+    }
+    return -1;
+}
+
+
+
 int MST(const Graph& graph){
     // Kruskal算法求最小生成树：读取一个树，输出其最小生成树的权值之和
     if(graph.isDirect) return -1; // 只能获取无向图的最小生成树
@@ -396,19 +431,27 @@ int MST(const Graph& graph){
 }
 
 int main(){
-    // GraphMatrix m(4, false);
-    GraphLink m(4, true);
-    m.setEdge(0,1,24);
-    m.setEdge(2,3,3);
-    m.setEdge(0,3,100);
-    m.setEdge(1,2,50);
-    m.setEdge(1,2,25); // 此处是修改边，而非新建
+    GraphMatrix m(6, true);
+    // GraphLink m(6, true);
+    m.setEdge(0,1,20);
+    m.setEdge(0,2,50);
+    m.setEdge(0,4,10);
+    m.setEdge(0,5,55);
+    m.setEdge(1,2,25);
+    m.setEdge(1,3,60);
+    m.setEdge(2,3,30);
+    m.setEdge(2,4,80);
+    m.setEdge(3,4,25);
+    m.setEdge(4,5,15);
+    m.setEdge(5,2,10);
+    m.setEdge(5,3,70);
     // cout<<m.getWeight(1,2)<<endl;
     // cout<<m.firstAdj(0)<<endl;
     // cout<<m.nextAdj(0,1)<<endl;
     // dfs(m);
     // cout<<endl;
     // bfs(m);
-    topoSort(m);
+    // topoSort(m);
     // cout<<MST(m);
+    cout<<dijkstra(m,0,3);
 }
