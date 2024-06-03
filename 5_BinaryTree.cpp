@@ -130,6 +130,8 @@ void BinaryTree<T>::levelOrder() const{
     }
 }
 
+// 待完善：huffman树、BST、Heap；有些以在作业题中完成
+
 int main(){
     using std::cout;
     BinaryTreeNode<int> node1(1), node2(2);
