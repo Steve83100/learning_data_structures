@@ -20,6 +20,9 @@ class SeqQueue : public Queue<T>{
     T* front;
     int maxSize;
     int queueSize;
+    // 此size数值实际上存储的是队尾元素的位置，而非元素总数，队首可能有弹出元素留下的空当
+    // 这也导致普通的顺序队列会产生“假溢出”现象，即 queueSize==maxSize 但其实并未满
+
     public:
     SeqQueue(int size = maxQueueSize): maxSize(size),  queueSize(0){front = new T[maxSize];}
     ~SeqQueue(){delete[] front;}
@@ -38,7 +41,44 @@ class SeqQueue : public Queue<T>{
 };
 
 template <typename T>
-class CirQueue : public Queue<T>{};
+class CirQueue : public Queue<T>{
+    // 解决普通顺序队列的一个方法是采用循环队列，在仍然用一段连续的存储空间存储数据的基础上，对指针的移动操作进行修改，
+    // 使得每当front和rear指针到达队尾后，继续前进则会指向队首；这样，就好像将这段存储空间首尾相接，构成循环了一样
+    private:
+    T* q;
+    int front;
+    int rear;
+    int maxSize;
+
+    public:
+    CirQueue(int size = maxQueueSize): front(0), rear(0), maxSize(size){q = new T[size];}
+    ~CirQueue(){}
+
+    virtual bool isEmpty() const{return front == rear;}
+    virtual bool isFull() const{return front == (rear + 1) % maxSize;}
+    // 为与空队列的情况区分，在rear距离front还剩一格时就判定为满，此时其实还有一个空位
+
+    virtual void clear(){
+        while(front != rear){
+            delete (q + front);
+            front = (front + 1) % maxSize;
+        }
+    }
+    virtual int length() const{return (rear - front + maxSize) % maxSize;}
+    // 长度一般是rear-front，但这里可能为负数（中间跨越了分界线），于是需要处理一下才能返回正确的长度
+
+    virtual T getFirst() const{return q[front];}
+    virtual void push(const T& data){
+        if(isFull()) return;
+        q[rear] = data;
+        rear = (rear + 1) % maxSize; // 这里是循环队列的关键，如果已到达尾部，则变回0
+    }
+    virtual void pop(){
+        if(isEmpty()) return;
+        delete (q + front);
+        front = (front + 1) % maxSize;
+    }
+};
 
 template <typename T>
 class LinkQueue : public Queue<T>{
@@ -98,11 +138,12 @@ class LinkQueue : public Queue<T>{
 
 
 int main(){
-    LinkQueue<int> q;
-    q.push(1);
-    q.push(2);
-    q.push(3);
+    CirQueue<int> q(3); // front:0; rear:0
+    q.push(1); // q:1; front:0; rear:1
+    q.push(2); // q:1,2; front:0; rear:2
     cout<<q.getFirst()<<endl;
-    q.pop();
+    q.pop(); // q:2; front:1; rear:2
+    cout<<q.length()<<endl;
+    q.push(3); // q:2,3; front:1; rear:0
     cout<<q.length();
 }
